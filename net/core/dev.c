@@ -6417,6 +6417,12 @@ void napi_enable(struct napi_struct *n)
 {
 	unsigned long new, val = READ_ONCE(n->state);
 
+	// ensure napi threads have been spawned
+	if (force_irqthreads() && n->dev->forced_napied && !n->dev->forced_napied_activated) {
+		n->dev->forced_napied_activated = true;
+        dev_set_threaded(n->dev, true);
+	}
+
 	do {
 		BUG_ON(!test_bit(NAPI_STATE_SCHED, &val));
 
@@ -6554,16 +6560,24 @@ static int napi_poll(struct napi_struct *n, struct list_head *repoll)
 static int napi_thread_wait(struct napi_struct *napi)
 {
 	bool woken = false;
+	bool intr_handled = false;
+	struct net_device *dev = napi->dev;
 
 	set_current_state(TASK_INTERRUPTIBLE);
 
 	while (!kthread_should_stop()) {
+		// intr_handled is not resetted until thread
+		// effectively run
+		if (force_irqthreads() && !intr_handled) {
+			intr_handled = dev->irq_handler_trampoline_data.irq_checker(dev);
+		}
+
 		/* Testing SCHED_THREADED bit here to make sure the current
 		 * kthread owns this napi and could poll on this napi.
 		 * Testing SCHED bit is not enough because SCHED bit might be
 		 * set by some other busy poll thread or by napi_disable().
 		 */
-		if (test_bit(NAPI_STATE_SCHED_THREADED, &napi->state) || woken) {
+		if ((force_irqthreads() && intr_handled) || test_bit(NAPI_STATE_SCHED_THREADED, &napi->state) || woken) {
 			WARN_ON(!list_empty(&napi->poll_list));
 			__set_current_state(TASK_RUNNING);
 			return 0;
@@ -6584,6 +6598,7 @@ static int napi_threaded_poll(void *data)
 	struct napi_struct *napi = data;
 	void *have;
 
+	// se ritorna 0 esegue, altrimenti termina
 	while (!napi_thread_wait(napi)) {
 		for (;;) {
 			bool repoll = false;

@@ -616,6 +616,9 @@ static ssize_t threaded_store(struct device *dev,
 			      struct device_attribute *attr,
 			      const char *buf, size_t len)
 {
+	if (force_irqthreads())
+		return -EOPNOTSUPP;
+
 	return netdev_store(dev, attr, buf, len, modify_napi_threaded);
 }
 static DEVICE_ATTR_RW(threaded);

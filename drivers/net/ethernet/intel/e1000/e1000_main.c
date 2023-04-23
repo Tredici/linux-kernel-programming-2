@@ -250,6 +250,12 @@ static void __exit e1000_exit_module(void)
 
 module_exit(e1000_exit_module);
 
+static struct napi_struct* e1000_napi_retriever(struct net_device *netdev)
+{
+	struct e1000_adapter *adapter = netdev_priv(netdev);
+	return &adapter->napi;
+}
+
 static int e1000_request_irq(struct e1000_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
@@ -257,8 +263,8 @@ static int e1000_request_irq(struct e1000_adapter *adapter)
 	int irq_flags = IRQF_SHARED;
 	int err;
 
-	err = request_irq(adapter->pdev->irq, handler, irq_flags, netdev->name,
-			  netdev);
+	err = request_net_irq(adapter->pdev->irq, handler, irq_flags, netdev->name,
+			  netdev, e1000_napi_retriever);
 	if (err) {
 		e_err(probe, "Unable to allocate interrupt Error: %d\n", err);
 	}

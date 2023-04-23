@@ -21,6 +21,7 @@
 #include <linux/sched/isolation.h>
 #include <uapi/linux/sched/types.h>
 #include <linux/task_work.h>
+#include <linux/netdevice.h>
 
 #include "internals.h"
 
@@ -2092,6 +2093,47 @@ const void *free_nmi(unsigned int irq, void *dev_id)
 
 	return devname;
 }
+
+static irqreturn_t irq_handler_trampoline(int irq, void *data)
+{
+	struct net_device *netdev = data;
+	// access napi reference
+	struct napi_struct *napi = netdev->irq_handler_trampoline_data.napi_retriever(netdev);
+	// simply wake up NAPI thread
+	__napi_schedule(napi);
+	return IRQ_HANDLED;
+}
+
+//static bool irq_checker(struct napi_struct *napi)
+static bool irq_checker(struct net_device *dev)
+{
+	//struct net_device *dev = napi->dev;
+	int irq = dev->irq_handler_trampoline_data.irq;
+	void *data = dev;
+	irqreturn_t (*intr)(int, void *) = dev->irq_handler_trampoline_data.original_handler;
+	return intr(irq, data) == IRQ_HANDLED;
+}
+
+struct napi_struct;
+int request_net_irq(unsigned int irq, irq_handler_t handler, unsigned long flags,
+	    const char *name, struct net_device *dev, struct napi_struct *(*napi_retriever)(struct net_device *))
+{
+	if (force_irqthreads() && napi_retriever != NULL) {
+		// napi has to be forcibly used
+		dev->forced_napied = true;
+		// variable values
+		dev->irq_handler_trampoline_data.irq = irq;
+		dev->irq_handler_trampoline_data.napi_retriever = napi_retriever;
+		dev->irq_handler_trampoline_data.original_handler = handler;
+		// constant values
+		dev->irq_handler_trampoline_data.irq_checker = irq_checker;
+		handler = irq_handler_trampoline;
+		// do not use thread for trampoline
+		flags |= IRQF_NO_THREAD;
+	}
+	return request_irq(irq, handler, flags, name, dev);
+}
+EXPORT_SYMBOL(request_net_irq);
 
 /**
  *	request_threaded_irq - allocate an interrupt line

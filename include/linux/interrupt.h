@@ -168,6 +168,12 @@ request_irq(unsigned int irq, irq_handler_t handler, unsigned long flags,
 	return request_threaded_irq(irq, handler, NULL, flags, name, dev);
 }
 
+// Like request_irq() but specilized for net_device(s)
+struct napi_struct;
+extern int __must_check
+request_net_irq(unsigned int irq, irq_handler_t handler, unsigned long flags,
+	    const char *name, struct net_device *dev, struct napi_struct *(*napi_retriever)(struct net_device *dev));
+
 extern int __must_check
 request_any_context_irq(unsigned int irq, irq_handler_t handler,
 			unsigned long flags, const char *name, void *dev_id);

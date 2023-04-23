@@ -2343,6 +2343,42 @@ struct net_device {
 	unsigned		wol_enabled:1;
 	unsigned		threaded:1;
 
+	// FORCED NAPIED
+	unsigned		forced_napied:1;
+	unsigned		forced_napied_activated:1;
+
+	// trick to do not have to free it because:
+	//	int request_net_irq is specific for net_device(s)
+	struct {
+		int irq;
+		irqreturn_t (*original_handler)(int, void *);
+		struct napi_struct *(*napi_retriever)(struct net_device *dev);
+		// used to execute IRQ handler inside
+		// NAPI thread
+		/*
+		* TODO - sposta dentro struct net_device ed accedi tramite
+		* la macro che da ottenere net_device da napi_struct!!!
+		*
+		* Funzione chiamata con riferimento a una struct nascosta
+		* (nascosta perché voglio evitare di rendere visibile il
+		* tipo 'irqreturn_t' in giro per il kernel) che tiene un
+		* riferimento all'interrupt handler: se l'interrupt handler
+		* ritorna IRQ_HANDLED allora prosegue con il NAPI thread
+		*/
+		bool (*irq_checker)(struct net_device *); // "thiscall"
+		// Approssimativabente:
+		// bool irq_checker(dev) {
+		//	irq_data = dev->irq_data;
+		// 	return irq_data->irq_handler(irq_data->irq, irq_data->data) == IRQ_HANDLED;
+		// }
+		// void *irq_data; // non più necessario perché l'handler prende il net_device
+		// struct irq_data_type {
+		// 	 irqreturn_t (*irq_handler)(int irq, void *data);
+		//	 int irq;
+		//   void *data;
+		// }
+	} irq_handler_trampoline_data;
+
 	struct list_head	net_notifier_list;
 
 #if IS_ENABLED(CONFIG_MACSEC)
